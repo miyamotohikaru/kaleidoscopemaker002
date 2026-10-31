@@ -15,7 +15,7 @@ type Stage = 'intro' | 'fill1' | 'fill2' | 'look' | 'name' | 'appraise';
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
 const body = document.body;
-const DOMAIN = 'kaleidoscopemaker.vercel.app';
+const DOMAIN = 'kaleidoscopemaker002.vercel.app';
 const MAX_BIG = 48;
 const MAX_SMALL = 640;
 
