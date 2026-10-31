@@ -31,24 +31,70 @@ function hash(s: string) {
   return h >>> 0;
 }
 
-// ランクで紙を変える：失敗は古びた紙と灰色の傾いた判子、美術館行きは赤い認定印、神は金の封印と「極」
+// 紙はどのランクでも同じ。良し悪しは、大きく押した評価のスタンプ（SS〜E）で見せる
+export const GRADES = ['E', 'D', 'C', 'B', 'A', 'S', 'SS'];
 interface Theme {
   paper: string;
   ink: string;
   sub: string;
   seal: string;
-  sealChar: string;
-  sealTilt: number;
-  aged: boolean;
-  certified: boolean;
-  gold: boolean;
 }
-function themeOf(rank: number): Theme {
-  const base = { paper: '#f4f3ef', ink: '#1d1d1b', sub: 'rgba(29,29,27,.55)', seal: 'rgba(178,52,42,.9)', sealChar: '鑑', sealTilt: -0.12, aged: false, certified: false, gold: false };
-  if (rank >= 6) return { ...base, sealChar: '極', sealTilt: -0.05, certified: true, gold: true };
-  if (rank === 5) return { ...base, sealTilt: -0.08, certified: true };
-  if (rank <= 1) return { ...base, paper: '#e4ddcd', ink: '#2d2924', sub: 'rgba(45,41,36,.55)', seal: 'rgba(100,96,90,.65)', sealTilt: 0.42, aged: true };
-  return base;
+function themeOf(_rank: number): Theme {
+  return { paper: '#f4f3ef', ink: '#1d1d1b', sub: 'rgba(29,29,27,.55)', seal: 'rgba(178,52,42,.9)' };
+}
+
+// 評価のスタンプ：ゴム印のように、枠と大きな文字。インクのかすれを少し残す
+function gradeStamp(x: CanvasRenderingContext2D, grade: string, cx: number, cy: number, tilt: number, seed: number) {
+  const S = 300;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  const red = '#b2342a';
+  g.strokeStyle = red;
+  g.fillStyle = red;
+  g.translate(S / 2, S / 2);
+  // 二重の丸枠
+  g.lineWidth = 9;
+  g.beginPath();
+  g.arc(0, 0, 128, 0, Math.PI * 2);
+  g.stroke();
+  g.lineWidth = 3;
+  g.beginPath();
+  g.arc(0, 0, 112, 0, Math.PI * 2);
+  g.stroke();
+  // 文字
+  const size = grade.length > 1 ? 128 : 168;
+  g.font = `700 ${size}px ${SANS}`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(grade, 0, 4);
+  g.font = `500 20px ${MONO}`;
+  g.fillText('GRADE', 0, -82);
+  g.fillText('KOSUKUMA', 0, 88);
+  // かすれ：ところどころインクが乗らない
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = 'destination-out';
+  let r = seed;
+  const rnd = () => ((r = (Math.imul(r, 1664525) + 1013904223) >>> 0) / 4294967296);
+  for (let i = 0; i < 900; i++) {
+    g.globalAlpha = 0.25 + rnd() * 0.6;
+    g.beginPath();
+    g.arc(rnd() * S, rnd() * S, 0.6 + rnd() * 2.2, 0, Math.PI * 2);
+    g.fill();
+  }
+  for (let i = 0; i < 6; i++) {
+    g.globalAlpha = 0.18;
+    g.beginPath();
+    g.ellipse(rnd() * S, rnd() * S, 20 + rnd() * 40, 4 + rnd() * 6, rnd() * 3, 0, Math.PI * 2);
+    g.fill();
+  }
+  x.save();
+  x.translate(cx, cy);
+  x.rotate(tilt);
+  x.globalAlpha = 0.88;
+  x.globalCompositeOperation = 'multiply';
+  x.drawImage(c, -S / 2, -S / 2);
+  x.restore();
 }
 
 // 欄：番号（タイプ）と見出し、その下に値
@@ -103,24 +149,6 @@ export async function drawCard(scope: HTMLCanvasElement, name: string, v: Verdic
     id.data[i + 2] += n;
   }
   x.putImageData(id, 0, 0);
-  if (T.aged) {
-    // 古びた紙：縁の焼けと、コーヒーの輪
-    const vg = x.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.75);
-    vg.addColorStop(0, 'rgba(120,90,50,0)');
-    vg.addColorStop(1, 'rgba(120,85,40,.3)');
-    x.fillStyle = vg;
-    x.fillRect(0, 0, W, H);
-    x.strokeStyle = 'rgba(110,70,30,.26)';
-    x.lineWidth = 9;
-    x.beginPath();
-    x.ellipse(W - 250, 620, 96, 90, 0.3, 0.2, Math.PI * 1.85);
-    x.stroke();
-    x.lineWidth = 3;
-    x.beginPath();
-    x.ellipse(W - 246, 624, 82, 77, 0.3, 0, Math.PI * 2);
-    x.stroke();
-  }
-
   const d = new Date();
   const ymd = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
   const no = `KM ${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(hash(name + d.getTime()) % 10000).padStart(4, '0')}`;
@@ -272,60 +300,9 @@ export async function drawCard(scope: HTMLCanvasElement, name: string, v: Verdic
   const lines = v.line.split('\n');
   lines.forEach((l, i) => x.fillText((i === 0 ? '「' : '　') + l + (i === lines.length - 1 ? '」' : ''), 216, 1182 + i * 44));
 
-  // 判子
-  x.save();
-  x.translate(W - 172, 1170);
-  if (T.gold) {
-    // 金の封印（ぎざぎざの円）を判子の下に
-    x.save();
-    x.rotate(0.2);
-    const g = x.createLinearGradient(-70, -70, 70, 70);
-    g.addColorStop(0, '#f1d98f');
-    g.addColorStop(0.5, '#a9802f');
-    g.addColorStop(1, '#e9cd7c');
-    x.fillStyle = g;
-    x.beginPath();
-    for (let i = 0; i < 48; i++) {
-      const a = (i / 48) * Math.PI * 2;
-      const rr = i % 2 ? 66 : 74;
-      if (i === 0) x.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
-      else x.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
-    }
-    x.closePath();
-    x.fill();
-    x.restore();
-  }
-  x.rotate(T.sealTilt);
-  x.strokeStyle = T.seal;
-  x.fillStyle = T.seal;
-  x.lineWidth = 4;
-  x.beginPath();
-  x.arc(0, 0, 52, 0, Math.PI * 2);
-  x.stroke();
-  x.lineWidth = 1.5;
-  x.beginPath();
-  x.arc(0, 0, 44, 0, Math.PI * 2);
-  x.stroke();
-  x.font = `700 36px ${SANS}`;
-  x.textAlign = 'center';
-  x.fillText(T.sealChar, 0, 0);
-  x.font = `500 14px ${SANS}`;
-  x.fillText('こすくま', 0, 26);
-  x.restore();
-  if (T.certified) {
-    // 認定：赤い枠の小さな印
-    x.save();
-    x.translate(W - 300, 700);
-    x.rotate(-0.06);
-    x.strokeStyle = 'rgba(178,52,42,.85)';
-    x.fillStyle = 'rgba(178,52,42,.85)';
-    x.lineWidth = 3;
-    x.strokeRect(-88, -26, 176, 46);
-    x.font = `500 20px ${MONO}`;
-    x.textAlign = 'center';
-    x.fillText(T.gold ? 'MASTERPIECE' : 'CERTIFIED', 0, 5);
-    x.restore();
-  }
+  // 評価のスタンプ：所見の右に、大きく斜めに押す
+  const hs = hash(name + v.rank);
+  gradeStamp(x, GRADES[v.rank] ?? 'C', W - 205, 1150, -0.2 + ((hs % 100) / 100) * 0.24, hs || 7);
 
   // 下の帯
   rule(x, T, H - 64, 1);
