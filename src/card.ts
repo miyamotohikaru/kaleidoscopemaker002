@@ -11,6 +11,7 @@ export interface Spec {
   mirrors: number;
   liquid: string; // 水・オイル・はちみつ
   count: number; // 入れた粒
+  items?: string[]; // 中身の内訳（「青のガラス玉 3」のように、多い順）
 }
 
 function img(src: string) {
@@ -127,7 +128,8 @@ export async function drawCard(scope: HTMLCanvasElement, name: string, v: Verdic
   await Promise.all([
     document.fonts.load(`400 40px 'Noto Sans JP'`, name + '万華鏡鑑定書所見図'),
     document.fonts.load(`700 40px 'Noto Sans JP'`, v.rankName + '万華鏡鑑定書'),
-    document.fonts.load(`500 40px 'Noto Sans JP'`, '鑑定番号日士鏡液粒名称結果所見図こすくまくん'),
+    document.fonts.load(`500 40px 'Noto Sans JP'`, '鑑定番号日士鏡液粒名称結果所見図中身種こすくまくん'),
+    document.fonts.load(`400 20px 'Noto Sans JP'`, (spec?.items ?? []).join('') + (spec?.liquid ?? '') + 'ほか種個'),
     document.fonts.load(`400 20px 'IBM Plex Mono'`),
     document.fonts.load(`500 20px 'IBM Plex Mono'`),
   ]).catch(() => {});
@@ -174,9 +176,50 @@ export async function drawCard(scope: HTMLCanvasElement, name: string, v: Verdic
   field(x, T, '22', '鑑定日', ymd, 72, 326, 24);
   field(x, T, '72', '鑑定士', 'こすくまくん', 72, 406, 24);
   const sp = spec ?? { mirrors: 8, liquid: '―', count: 0 };
-  field(x, T, '51', '鏡', `${sp.mirrors} 枚`, 560, 246, 24);
-  field(x, T, '52', '溶液', sp.liquid, 560, 326, 24);
-  field(x, T, '53', '入れた粒', `${sp.count} 個`, 560, 406, 24);
+
+  // 鑑定結果（右上）
+  const rx = 560;
+  x.textAlign = 'left';
+  x.fillStyle = T.sub;
+  x.font = `400 17px ${MONO}`;
+  x.fillText('[58]', rx, 246);
+  x.font = `500 17px ${SANS}`;
+  x.fillText('鑑定結果', rx + 54, 246);
+  x.fillStyle = T.ink;
+  let fs = 50;
+  do {
+    x.font = `700 ${fs}px ${SANS}`;
+    fs -= 2;
+  } while (x.measureText(v.rankName).width > W - 72 - rx && fs > 28);
+  x.fillText(v.rankName, rx, 316);
+  // 目盛り：0〜6 の7段
+  const bx = rx;
+  const bw = W - 72 - rx;
+  const by = 370;
+  x.fillRect(bx, by, bw, 2);
+  x.font = `400 14px ${MONO}`;
+  for (let i = 0; i < RANKS.length; i++) {
+    const tx = bx + (bw * i) / (RANKS.length - 1);
+    x.fillRect(tx - 0.5, by - 8, 1, 18);
+    x.textAlign = 'center';
+    x.fillStyle = i === v.rank ? '#b2342a' : T.sub;
+    x.fillText(String(i), tx, by + 32);
+    x.fillStyle = T.ink;
+  }
+  const mx = bx + bw * v.pos;
+  x.fillStyle = '#b2342a';
+  x.beginPath();
+  x.moveTo(mx, by - 4);
+  x.lineTo(mx - 9, by - 20);
+  x.lineTo(mx + 9, by - 20);
+  x.closePath();
+  x.fill();
+  x.fillStyle = T.sub;
+  x.font = `400 15px ${SANS}`;
+  x.textAlign = 'left';
+  x.fillText(RANKS[0], bx, by + 58);
+  x.textAlign = 'right';
+  x.fillText(RANKS[RANKS.length - 1], bx + bw, by + 58);
   rule(x, T, 470);
 
   // 名称
@@ -187,7 +230,7 @@ export async function drawCard(scope: HTMLCanvasElement, name: string, v: Verdic
   x.font = `500 17px ${SANS}`;
   x.fillText('名称', 126, 512);
   x.fillStyle = T.ink;
-  let fs = 52;
+  fs = 52;
   const label = `「${name}」`;
   do {
     x.font = `500 ${fs}px ${SANS}`;
@@ -225,60 +268,103 @@ export async function drawCard(scope: HTMLCanvasElement, name: string, v: Verdic
   x.beginPath();
   x.arc(cx, cy, r + 8, 0, Math.PI * 2);
   x.stroke();
-  // 引き出し線
-  x.beginPath();
-  x.moveTo(cx + r * 0.62, cy - r * 0.62);
-  x.lineTo(cx + r + 40, cy - r - 10);
-  x.stroke();
+  // 引き出し線：図の中の点から右の注記へ（特許の図のように）。画の上では白い縁取りで見えるように
+  const tx0 = 560;
+  const callout = (ang: number, k: number, ty: number) => {
+    const a = (ang * Math.PI) / 180;
+    const px = cx + Math.cos(a) * r * k;
+    const py = cy + Math.sin(a) * r * k;
+    const pts: [number, number][] = [
+      [px, py],
+      [tx0 - 34, ty],
+      [tx0 - 10, ty],
+    ];
+    x.save();
+    x.lineCap = 'round';
+    x.lineJoin = 'round';
+    for (const [w, col] of [
+      [4, 'rgba(255,255,255,.85)'],
+      [1.2, T.ink],
+    ] as const) {
+      x.strokeStyle = col;
+      x.lineWidth = w;
+      x.beginPath();
+      pts.forEach(([qx, qy], i) => (i ? x.lineTo(qx, qy) : x.moveTo(qx, qy)));
+      x.stroke();
+    }
+    x.fillStyle = '#fff';
+    x.strokeStyle = T.ink;
+    x.lineWidth = 1.5;
+    x.beginPath();
+    x.arc(px, py, 5, 0, Math.PI * 2);
+    x.fill();
+    x.stroke();
+    x.restore();
+  };
+  const tag = (no: string, label: string, ty: number) => {
+    x.textAlign = 'left';
+    x.fillStyle = T.sub;
+    x.font = `400 17px ${MONO}`;
+    x.fillText(`[${no}]`, tx0, ty + 6);
+    x.font = `500 17px ${SANS}`;
+    x.fillText(label, tx0 + 54, ty + 6);
+  };
+
+  callout(-45, 0.88, 676);
+  x.textAlign = 'left';
   x.fillStyle = T.ink;
   x.font = `400 18px ${MONO}`;
-  x.fillText('FIG. 1', cx + r + 46, cy - r - 4);
+  x.fillText('FIG. 1', tx0, 682);
   x.fillStyle = T.sub;
   x.font = `400 15px ${MONO}`;
-  x.fillText(`${sp.mirrors}-MIRROR VIEW`, cx + r + 46, cy - r + 18);
+  x.fillText(`${sp.mirrors}-MIRROR VIEW`, tx0, 704);
 
-  // 鑑定結果（右の列）
-  const rx = 560;
-  x.fillStyle = T.sub;
-  x.font = `400 17px ${MONO}`;
-  x.fillText('[58]', rx, 730);
-  x.font = `500 17px ${SANS}`;
-  x.fillText('鑑定結果', rx + 54, 730);
+  // 溶液：筒いっぱいに満ちているので、縁の近くを指す
+  callout(-12, 0.84, 752);
+  tag('52', '溶液', 752);
   x.fillStyle = T.ink;
-  fs = 56;
-  do {
-    x.font = `700 ${fs}px ${SANS}`;
-    fs -= 2;
-  } while (x.measureText(v.rankName).width > W - 72 - rx && fs > 30);
-  x.fillText(v.rankName, rx, 806);
-  // 目盛り：0〜6 の7段
-  const bx = rx;
-  const bw = W - 72 - rx;
-  const by = 870;
-  x.fillRect(bx, by, bw, 2);
-  x.font = `400 14px ${MONO}`;
-  for (let i = 0; i < RANKS.length; i++) {
-    const tx = bx + (bw * i) / (RANKS.length - 1);
-    x.fillRect(tx - 0.5, by - 8, 1, 18);
-    x.textAlign = 'center';
-    x.fillStyle = i === v.rank ? '#b2342a' : T.sub;
-    x.fillText(String(i), tx, by + 34);
-    x.fillStyle = T.ink;
+  x.font = `400 26px ${SANS}`;
+  x.fillText(sp.liquid, tx0 + 54, 792);
+
+  // 入れた粒
+  callout(10, 0.42, 838);
+  tag('53', '入れた粒', 838);
+  x.fillStyle = T.ink;
+  x.font = `400 26px ${SANS}`;
+  x.fillText(`${sp.count} 個`, tx0 + 54, 878);
+
+  // 中身の内訳：名前と数を、幅に合わせて折り返す。入りきらない分は「ほか n 種」
+  const items = sp.items ?? [];
+  callout(36, 0.66, 924);
+  tag('55', items.length ? `中身（${items.length} 種）` : '中身', 924);
+  x.fillStyle = T.ink;
+  x.font = `400 19px ${SANS}`;
+  const lw = W - 72 - (tx0 + 54);
+  const gap = x.measureText('　').width;
+  const rows: string[][] = [[]];
+  let used = 0;
+  let shown = 0;
+  const MAX_ROWS = 3; // 4 行目は評価のスタンプにかかる
+  for (const it of items.length ? items : ['なし']) {
+    const w = x.measureText(it).width;
+    const row = rows[rows.length - 1];
+    if (row.length && used + gap + w > lw) {
+      if (rows.length === MAX_ROWS) break;
+      rows.push([it]);
+      used = w;
+    } else {
+      row.push(it);
+      used += (row.length > 1 ? gap : 0) + w;
+    }
+    shown++;
   }
-  const mx = bx + bw * v.pos;
-  x.fillStyle = '#b2342a';
-  x.beginPath();
-  x.moveTo(mx, by - 4);
-  x.lineTo(mx - 9, by - 20);
-  x.lineTo(mx + 9, by - 20);
-  x.closePath();
-  x.fill();
-  x.fillStyle = T.sub;
-  x.font = `400 15px ${SANS}`;
-  x.textAlign = 'left';
-  x.fillText(RANKS[0], bx, by + 62);
-  x.textAlign = 'right';
-  x.fillText(RANKS[RANKS.length - 1], bx + bw, by + 62);
+  if (shown < items.length) {
+    const last = rows[rows.length - 1];
+    const more = `ほか ${items.length - shown + (last.length > 1 ? 1 : 0)} 種`;
+    if (last.length > 1) last.pop();
+    last.push(more);
+  }
+  rows.forEach((row, i) => x.fillText(row.join('　'), tx0 + 54, 960 + i * 30));
 
   rule(x, T, 1076, 1, true);
 
